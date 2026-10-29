@@ -1,6 +1,5 @@
 FROM python:3.10-slim
 
-# Install Tesseract OCR engine and Indian language data packs (eng, tam, kan, tel, mal, hin)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-eng \
@@ -20,7 +19,6 @@ ENV HOME=/home/user \
 
 WORKDIR $HOME/app
 
-# Install lightweight python packages (NO heavy PyTorch/PaddlePaddle)
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir \
     fastapi==0.115.0 \

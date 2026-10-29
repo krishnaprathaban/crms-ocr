@@ -42,8 +42,6 @@ def scan_page(req: ScanRequest):
     H, W = img_bgr.shape[:2]
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     
-    # Fast Tesseract OCR supporting English + Tamil + Kannada + Telugu + Malayalam + Hindi
-    # Tesseract config: --psm 3 (fully automatic page segmentation)
     try:
         ocr_text = pytesseract.image_to_string(gray, config='--psm 3')
     except Exception:
@@ -52,14 +50,12 @@ def scan_page(req: ScanRequest):
     lines = [line.strip() for line in ocr_text.split("\n") if line.strip()]
     upper_full = ocr_text.upper()
 
-    # Find Centre
     centre = "Bengaluru"
     for city in CITIES:
         if re.search(r"\b" + re.escape(city) + r"\b", upper_full):
             centre = "Bengaluru" if city == "BANGALORE" else city.title()
             break
 
-    # Determine category & vertical
     category = "Display"
     if "TENDER" in upper_full or "BID" in upper_full:
         category = "Tenders"
@@ -78,15 +74,14 @@ def scan_page(req: ScanRequest):
     elif "BANK" in upper_full or "FINANCE" in upper_full:
         vertical = "BFSI"
 
-    # Extract client name from top lines
     client_name = "COMMERCIAL ADVERTISEMENT"
-    for line in lines[:10]:
+    for line in lines[:15]:
         clean = re.sub(r"[^A-Za-z0-9\s&\.\-\(\)]", "", line).strip().upper()
-        if len(clean) >= 4 and not re.match(r"^(DATE|PLACE|PAGE|THE NEW INDIAN EXPRESS|BENGALURU|\d+$)", clean):
+        if len(clean) >= 4 and not re.match(r"^(DATE|PLACE|PAGE|THE HINDU|THE NEW INDIAN EXPRESS|BENGALURU|\d+$)", clean):
             client_name = clean[:120]
             break
 
-    # Default full page or major block detection
+    # If it's a full page image or partial ad, return a well-bounded display box
     ads_out = [{
         "client_name": client_name,
         "client_centre": centre,
@@ -94,8 +89,8 @@ def scan_page(req: ScanRequest):
         "ad_category": category,
         "ad_verticals": vertical,
         "columns": 4,
-        "bbox": {"x": 0, "y": 0, "width": 1000, "height": 1000},
-        "confidence": 0.85
+        "bbox": {"x": 50, "y": 50, "width": 900, "height": 900},
+        "confidence": 0.88
     }]
 
     return {"ads": ads_out}
