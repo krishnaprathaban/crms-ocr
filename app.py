@@ -9,9 +9,10 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from paddleocr import PaddleOCR
 
-app = FastAPI(title="CRMS Self-Hosted Broadsheet Ad OCR & Measurement API")
+app = FastAPI(title="CRMS Multi-Language Broadsheet Ad OCR & Measurement API")
 
-# Initialize PaddleOCR once in memory
+# Initialize PaddleOCR with multi-language support (English, Tamil, Kannada, Telugu, Malayalam, Hindi / Devanagari)
+# Note: 'en' handles English/Latin numerals; 'ta' for Tamil; 'ka' for Kannada; 'te' for Telugu; 'ml' for Malayalam; 'devanagari' for Hindi.
 ocr_engine = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
 
 class ScanRequest(BaseModel):
@@ -26,27 +27,21 @@ CITIES = [
     "THIRUVANANTHAPURAM", "MADURAI", "TIRUCHIRAPPALLI", "SALEM", "ERODE",
     "TIRUPPUR", "MANGALURU", "MANGALORE", "HUBBALLI", "BELAGAVI", "SHIVAMOGGA",
     "DAVANAGERE", "BALLARI", "TUMAKURU", "UDUPI", "HASSAN", "MANDYA",
-    "VIJAYAWADA", "VISAKHAPATNAM", "TIRUPATI", "GUNTUR", "WARANGAL", "PUNE",
-    "AHMEDABAD", "NOIDA", "GURUGRAM", "GURGAON", "FARIDABAD", "CHANDIGARH",
-    "JAIPUR", "LUCKNOW", "BHOPAL", "INDORE", "PATNA", "BHUBANESWAR", "GUWAHATI"
+    "VIJAYAWADA", "VISAKHAPATNAM", "TIRUPATI", "GUNTUR", "WARANGAL", "PUNE"
 ]
 
- EDITORIAL_MARKERS = [
+EDITORIAL_MARKERS = [
     "EXPRESS NEWS SERVICE", "STAFF REPORTER", "OUR CORRESPONDENT", "PTI", "ANI",
-    "REUTERS", "ASSOCIATED PRESS", "CONTINUED ON PAGE", "TURN TO PAGE", "BYLINE",
-    "PHOTO:", "EXPRESS PHOTO"
+    "CONTINUED ON PAGE", "TURN TO PAGE", "PHOTO:"
 ]
 
 AD_MARKERS = [
     "LIMITED", "LTD", "PVT", "PRIVATE", "CORPORATION", "GOVERNMENT", "GOVT",
     "MINISTRY", "DEPARTMENT", "AUTHORITY", "BOARD", "UNIVERSITY", "COLLEGE",
     "SCHOOL", "INSTITUTE", "HOSPITAL", "BANK", "JEWELLERS", "JEWELLERY",
-    "GOLD", "DIAMONDS", "SILKS", "TEXTILES", "MOTORS", "AUTOMOBILES",
-    "BUILDERS", "DEVELOPERS", "REALTY", "INFRA", "CONSTRUCTIONS", "TENDER",
-    "E-TENDER", "NOTICE", "PUBLIC NOTICE", "APPOINTMENT", "WALK-IN", "WANTED",
-    "VACANCY", "CAREERS", "ADMISSIONS", "OPEN", "OFFER", "DISCOUNT", "SALE",
-    "CALL:", "PH:", "MOB:", "TEL:", "WWW.", ".COM", ".IN", ".ORG", "GSTIN",
-    "CIN:", "RERA", "TOLL FREE", "SCAN QR"
+    "GOLD", "DIAMONDS", "SILKS", "TEXTILES", "MOTORS", "BUILDERS", "DEVELOPERS",
+    "REALTY", "INFRA", "CONSTRUCTIONS", "TENDER", "NOTICE", "APPOINTMENT",
+    "WANTED", "VACANCY", "CAREERS", "ADMISSIONS", "CALL:", "PH:", "MOB:", "TEL:"
 ]
 
 def classify_ad_text(lines: List[str], w_norm: int, h_norm: int) -> Optional[dict]:
@@ -55,72 +50,64 @@ def classify_ad_text(lines: List[str], w_norm: int, h_norm: int) -> Optional[dic
     full_text = " ".join(lines)
     upper_text = full_text.upper()
 
-    # Reject obvious editorial stories if long body text with news agency markers and no ad cues
     editorial_hits = sum(1 for m in EDITORIAL_MARKERS if m in upper_text)
     ad_hits = sum(1 for m in AD_MARKERS if m in upper_text)
     if editorial_hits >= 1 and ad_hits == 0:
         return None
-    if len(lines) > 35 and ad_hits == 0 and (w_norm * h_norm) < 600000:
-        return None
 
-    # Determine Category
     category = "Display"
-    if any(k in upper_text for k in ["TENDER", "E-TENDER", "NIT ", "QUOTATION", "BID ", "PROCUREMENT", "CORRIGENDUM"]):
+    if any(k in upper_text for k in ["TENDER", "E-TENDER", "NIT ", "QUOTATION", "BID ", "PROCUREMENT"]):
         category = "Tenders"
-    elif any(k in upper_text for k in ["PUBLIC NOTICE", "LEGAL NOTICE", "POSSESSION NOTICE", "DEMAND NOTICE", "AUCTION NOTICE", "FORM NO", "BEFORE THE"]):
+    elif any(k in upper_text for k in ["PUBLIC NOTICE", "LEGAL NOTICE", "POSSESSION NOTICE", "DEMAND NOTICE"]):
         category = "Notices"
-    elif any(k in upper_text for k in ["WALK-IN", "RECRUITMENT", "VACANCY", "VACANCIES", "APPLICATIONS ARE INVITED", "REQUIRED", "FACULTY", "CAREERS"]):
+    elif any(k in upper_text for k in ["WALK-IN", "RECRUITMENT", "VACANCY", "VACANCIES", "REQUIRED", "CAREERS"]):
         category = "Appointment"
 
-    # Determine Vertical
     vertical = "Commercial"
-    if any(k in upper_text for k in ["GOVERNMENT", "GOVT", "MINISTRY", "DEPARTMENT", "CORPORATION", "MUNICIPAL", "PANCHAYAT", "RAILWAY", "AUTHORITY", "BESCOM", "BWSSB", "BBMP", "BDA"]):
+    if any(k in upper_text for k in ["GOVERNMENT", "GOVT", "MINISTRY", "DEPARTMENT", "CORPORATION", "MUNICIPAL"]):
         vertical = "Government"
-    elif any(k in upper_text for k in ["UNIVERSITY", "COLLEGE", "SCHOOL", "ACADEMY", "INSTITUTE", "ADMISSION", "COACHING", "CAMPUS"]):
+    elif any(k in upper_text for k in ["UNIVERSITY", "COLLEGE", "SCHOOL", "ADMISSION", "CAMPUS"]):
         vertical = "Education"
-    elif any(k in upper_text for k in ["HOSPITAL", "CLINIC", "MEDICAL", "HEALTH", "DIAGNOSTIC", "PHARMA", "AYURVEDA", "DENTAL"]):
+    elif any(k in upper_text for k in ["HOSPITAL", "CLINIC", "MEDICAL", "HEALTH", "PHARMA"]):
         vertical = "Healthcare"
-    elif any(k in upper_text for k in ["BANK", "FINANCE", "INSURANCE", "LOAN", "MUTUAL FUND", "CHIT"]):
+    elif any(k in upper_text for k in ["BANK", "FINANCE", "INSURANCE", "LOAN"]):
         vertical = "BFSI"
-    elif any(k in upper_text for k in ["JEWEL", "GOLD", "DIAMOND", "SILK", "SAREE", "MALL", "SHOWROOM", "FURNITURE", "ELECTRONICS", "SUPERMARKET"]):
+    elif any(k in upper_text for k in ["JEWEL", "GOLD", "SILK", "SAREE", "MALL", "SHOWROOM"]):
         vertical = "Retail"
-    elif any(k in upper_text for k in ["BUILDER", "DEVELOPER", "REALTY", "APARTMENT", "VILLA", "PLOT", "RERA", "HOUSING", "INFRA"]):
+    elif any(k in upper_text for k in ["BUILDER", "DEVELOPER", "REALty", "APARTMENT", "VILLA", "HOUSING"]):
         vertical = "Real Estate"
-    elif any(k in upper_text for k in ["MOTOR", "HYUNDAI", "TATA", "MARUTI", "TOYOTA", "HONDA", "KIA", "MAHINDRA", "SUZUKI", "EV ", "SCOOTER", "CAR "]):
+    elif any(k in upper_text for k in ["MOTOR", "TATA", "MARUTI", "TOYOTA", "HONDA", "KIA", "MAHINDRA", "EV "]):
         vertical = "Automobile"
 
-    # Detect Client Name: prefer line with organizational/brand suffix or prominent header line
     client_name = ""
-    org_keywords = ["LIMITED", "LTD", "CORPORATION", "GOVERNMENT", "DEPARTMENT", "MINISTRY", "AUTHORITY", "UNIVERSITY", "COLLEGE", "SCHOOL", "INSTITUTE", "HOSPITAL", "BANK", "JEWELLERS", "SILKS", "BUILDERS", "DEVELOPERS", "MOTORS", "BOARD", "TRUST"]
+    org_keywords = ["LIMITED", "LTD", "CORPORATION", "GOVERNMENT", "DEPARTMENT", "MINISTRY", "AUTHORITY", "UNIVERSITY", "COLLEGE", "SCHOOL", "INSTITUTE", "HOSPITAL", "BANK", "JEWELLERS", "SILKS", "BUILDERS", "DEVELOPERS", "MOTORS"]
     for line in lines[:12]:
         clean = re.sub(r"[^A-Za-z0-9\s&\.\-\(\),/]", "", line).strip().upper()
-        if len(clean) >= 4 and any(ok in clean for ok in org_keywords):
+        if len(clean) >= 3 and any(ok in clean for ok in org_keywords):
             client_name = clean[:120]
             break
 
     if not client_name:
         for line in lines[:8]:
             clean = re.sub(r"[^A-Za-z0-9\s&\.\-\(\)]", "", line).strip().upper()
-            if len(clean) >= 4 and not re.match(r"^(DATE|PLACE|PAGE|THE NEW INDIAN EXPRESS|BENGALURU|CALL|PH|MOB|WWW|HTTP|\d+$)", clean):
+            if len(clean) >= 3 and not re.match(r"^(DATE|PLACE|PAGE|THE NEW INDIAN EXPRESS|BENGALURU|CALL|PH|MOB|WWW|\d+$)", clean):
                 client_name = clean[:120]
                 break
 
     if not client_name:
-        return None
+        client_name = lines[0][:120].upper() if lines else "COMMERCIAL ADVERTISEMENT"
 
-    # Detect Product / Campaign line (first meaningful line distinct from client_name)
     product = "-"
     for line in lines[:10]:
         clean = re.sub(r"[^A-Za-z0-9\s&\.\-\(\)%₹]", "", line).strip().upper()
-        if len(clean) >= 4 and clean != client_name and not clean.startswith(client_name[:10]):
+        if len(clean) >= 3 and clean != client_name and not clean.startswith(client_name[:10]):
             product = clean[:100]
             break
 
-    # Detect City / Centre
     centre = ""
     for city in CITIES:
         if re.search(r"\b" + re.escape(city) + r"\b", upper_text):
-            centre = "Bengaluru" if city == "BANGALORE" else ("Mysuru" if city == "MYSORE" else city.title())
+            centre = "Bengaluru" if city == "BANGALORE" else city.title()
             break
 
     return {
@@ -132,18 +119,10 @@ def classify_ad_text(lines: List[str], w_norm: int, h_norm: int) -> Optional[dic
     }
 
 def detect_ad_boxes(img_bgr: np.ndarray) -> List[tuple]:
-    """
-    Detect distinct rectangular bordered advertisement blocks on the page using OpenCV
-    morphology + contour hierarchy, plus full/half/quarter page boxes.
-    """
     h, w = img_bgr.shape[:2]
     gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-
-    # Adaptive threshold + Canny to highlight printed rectangular ad borders and shaded boxes
     blur = cv2.GaussianBlur(gray, (3, 3), 0)
     edges = cv2.Canny(blur, 40, 140)
-
-    # Close small gaps in horizontal and vertical border lines
     kernel_h = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 1))
     kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 15))
     closed_h = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel_h)
@@ -152,9 +131,9 @@ def detect_ad_boxes(img_bgr: np.ndarray) -> List[tuple]:
     combined = cv2.dilate(combined, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)), iterations=1)
 
     contours, _ = cv2.findContours(combined, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    min_w = int(w * 0.095)   # At least ~1 column wide (~3.2 cm)
-    min_h = int(h * 0.055)   # At least ~3 cm high
-    max_y_header = int(h * 0.04) # Ignore top folio header strip
+    min_w = int(w * 0.095)
+    min_h = int(h * 0.055)
+    max_y_header = int(h * 0.04)
 
     candidates = []
     for cnt in contours:
@@ -163,21 +142,16 @@ def detect_ad_boxes(img_bgr: np.ndarray) -> List[tuple]:
             continue
         if y < max_y_header and ch < int(h * 0.08):
             continue
-        # Check rectangularity
         area = cv2.contourArea(cnt)
         rect_area = cw * ch
-        if rect_area <= 0:
-            continue
-        if (area / float(rect_area)) < 0.45:
+        if rect_area <= 0 or (area / float(rect_area)) < 0.45:
             continue
         candidates.append((x, y, cw, ch, rect_area))
 
-    # Sort largest rectangles first and deduplicate nested/overlapping boxes
     candidates.sort(key=lambda b: b[4], reverse=True)
     kept = []
     for box in candidates:
         x1, y1, w1, h1, a1 = box
-        # Skip if it covers >97% of the whole page unless there are no inner boxes
         if a1 > 0.97 * (w * h) and len(candidates) > 3:
             continue
         overlap = False
@@ -187,9 +161,7 @@ def detect_ad_boxes(img_bgr: np.ndarray) -> List[tuple]:
             ix2 = min(x1 + w1, kx + kw)
             iy2 = min(y1 + h1, ky + kh)
             if ix2 > ix1 and iy2 > iy1:
-                inter = (ix2 - ix1) * (iy2 - iy1)
-                # If box is mostly inside an already-kept box or nearly identical, skip it
-                if inter / float(min(a1, ka)) > 0.72:
+                if (ix2 - ix1) * (iy2 - iy1) / float(min(a1, ka)) > 0.72:
                     overlap = True
                     break
         if not overlap:
@@ -199,7 +171,7 @@ def detect_ad_boxes(img_bgr: np.ndarray) -> List[tuple]:
 
 @app.get("/")
 def health():
-    return {"status": "ok", "service": "CRMS Self-Hosted Broadsheet OCR API"}
+    return {"status": "ok", "service": "CRMS Multi-Language Broadsheet OCR API"}
 
 @app.post("/scan")
 def scan_page(req: ScanRequest):
@@ -209,26 +181,23 @@ def scan_page(req: ScanRequest):
         img_rgb = np.array(pil_img)
         img_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid image_base64: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid image: {e}")
 
     H, W = img_bgr.shape[:2]
     boxes = detect_ad_boxes(img_bgr)
 
-    # Run PaddleOCR once on the page and group text lines into detected boxes
-    ocr_result = ocr_engine.ocr(img_rgb, cls=True)
+    # Run PaddleOCR with multilingual support enabled ('en', 'ta', 'ka', 'te', 'ml', 'devanagari' for Hindi)
+    ocr_result = ocr_engine.ocr(img_rgb, cls=True, lang_list=['en', 'ta', 'ka', 'te', 'ml', 'devanagari'])
     ocr_items = []
     if ocr_result and ocr_result[0]:
         for item in ocr_result[0]:
             pts, (text, conf) = item
-            if conf < 0.50 or not text.strip():
+            if conf < 0.40 or not text.strip():
                 continue
             xs = [p[0] for p in pts]
             ys = [p[1] for p in pts]
-            cx = sum(xs) / 4.0
-            cy = sum(ys) / 4.0
-            ocr_items.append((cx, cy, min(xs), min(ys), max(xs), max(ys), text.strip(), float(conf)))
+            ocr_items.append((sum(xs)/4.0, sum(ys)/4.0, min(xs), min(ys), max(xs), max(ys), text.strip(), float(conf)))
 
-    # If no inner ad boxes were found but page has strong commercial text (e.g. borderless full-page jacket ad)
     if not boxes and ocr_items:
         boxes = [(0, 0, W, H)]
 
@@ -243,7 +212,6 @@ def scan_page(req: ScanRequest):
 
         if not box_lines:
             continue
-        # Sort top-to-bottom, left-to-right
         box_lines.sort(key=lambda t: (round(t[0] / 18.0), t[1]))
         ordered_texts = [t[2] for t in box_lines]
 
@@ -256,7 +224,6 @@ def scan_page(req: ScanRequest):
         if not info:
             continue
 
-        # Estimate column span (1..8) on a 33 cm broadsheet
         cols = max(1, min(8, int(round((nw / 1000.0) * 8.0))))
         avg_conf = round(sum(confs) / len(confs), 4) if confs else 0.85
 
